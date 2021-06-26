@@ -1,0 +1,426 @@
+<!DOCTYPE>
+<html>
+<head>
+	<title>Tetris En HTML5</title>
+</head>
+<body>
+	<canvas id="tablerotetris" width="225" height="500"></canvas>
+	<div>
+		<p>Nivel: <input type="text" id="nivel" /></p>
+		<p>Lineas: <input type="text" id="lineas" /></p>
+	</div>
+<script>
+var tetris = function(conf){
+	
+	conf.columnas -= 1, conf.filas += 3;
+	var matriztablero = [];
+	var puntosMov = [];
+	var puntosP = [];
+	var piezaActual = [];
+	var intervalo;
+	var intervaloAnimacion;
+	var tiempoAnimacion = 20;
+	var estadoJuego = 0;
+	var puntuacion = {
+		actual: 0,
+		lineasActual: 0,
+		nivel: 0,
+	};
+	var tiempo;
+	
+	var pieza = new Image();
+    var fondo = new Image();
+    pieza.src = "bloque.png";
+    fondo.src = "fonto_mario.jpg";
+    var canvas = document.querySelector(conf.contenedor);
+    var contexto = canvas.getContext("2d");
+	
+	var piezas = [
+		[
+			[0,1,0,0],
+			[0,1,0,0],
+			[0,1,1,0],
+			[0,0,0,0]
+		],
+		[
+			[0,0,1,0],
+			[0,0,1,0],
+			[0,1,1,0],
+			[0,0,0,0]
+		],
+		[
+			[0,1,0,0],
+			[0,1,0,0],
+			[0,1,0,0],
+			[0,1,0,0]
+		],
+		[
+			[0,0,0,0],
+			[0,0,1,1],
+			[0,1,1,0],
+			[0,0,0,0]
+		],
+		[
+			[0,0,0,0],
+			[1,1,0,0],
+			[0,1,1,0],
+			[0,0,0,0]
+		],
+		[
+			[0,0,0,0],
+			[0,1,1,0],
+			[0,1,1,0],
+			[0,0,0,0]
+		],
+		[
+			[0,1,0,0],
+			[0,1,1,0],
+			[0,1,0,0],
+			[0,0,0,0]
+		]
+	];
+	
+	//Metodo que genera matrix de c columnas por f filas
+	function generarTablero(c, f){
+		var newtablero = [];
+		for(i=0; i<=f; i++){
+			var fila = [];
+			for(j=0; j<=c; j++){
+				fila[j] = 0;
+			}
+			newtablero[i] = fila;
+		}
+		return newtablero;
+	}
+	
+	//Metodo que genera fila con n columnas
+	function generarFila(){
+		var newFila = [];
+		for(j=0; j<=conf.columnas; j++){
+			newFila[j] = 0;
+		}
+		return newFila;
+	}
+	
+	//Genera un numero aleatorio entre el 0 y max-1
+	function randomNum(max){
+        var num = 0;
+        do{ num = Math.ceil((Math.random())*10); }while( (num < 1) || (num > max) );
+        return --num;
+    }
+	
+	//Calcula las coordenadas de cada bloque(4) de la pieza
+	function obtenerFC(pieza){
+		var puntos = [], ind = 0;
+		for(i=0; i<4; i++){
+			for(j=0; j<4; j++){
+				if( pieza[i][j] ){
+					puntos[ind] = [(i+puntosMov[0]), j+puntosMov[1]];
+					ind++;
+					if(4==ind) break;
+				}
+			}
+		}
+		return puntos;
+	}
+	
+	//Inserta la pieza(4 bloques) dentro de la matriz tablero
+	function insertarPieza(tablero, pieza){
+		var tableroFuturo = JSON.parse( JSON.stringify(tablero) );
+		for(i=0, veces=puntosP.length; i<veces; i++){
+			tableroFuturo[pieza[i][0]][pieza[i][1]] = 1;
+		}
+		return tableroFuturo;
+	}
+	
+	//Remueve 4 bloques de la matriz en las coordenadas de la pieza
+	function removerPieza(tablero, pieza){
+		var tableroFuturo = JSON.parse( JSON.stringify(tablero) );
+		for(i=0, veces=puntosP.length; i<veces; i++){
+			if( tableroFuturo[pieza[i][0]][pieza[i][1]] )
+				tableroFuturo[pieza[i][0]][pieza[i][1]] = 0;
+		}
+		return tableroFuturo;
+	}
+	
+	//Rota una matriz de n X n lados en sentido horario
+	function rotarH(elemento){
+		elemento = JSON.parse( JSON.stringify(elemento) );
+		var aux = [];
+		var largo = elemento.length;
+		var ind2 = 0;
+		for(j=0; j<largo; j++){
+			var fila = [];
+			var ind1 = 0;
+			for(i=(largo-1); i>=0; i--){
+				fila[ind1] = elemento[i][j];
+				ind1++;
+			}
+			aux[ind2] = fila;
+			ind2++;
+		}
+		return aux;
+	}
+	
+	/*function imprimir(){
+		var contenidotab = "";
+		for(i=0; i<=conf.filas; i++){
+			for(j=0; j<=conf.columnas; j++){
+				contenidotab += matriztablero[i][j]+" ";
+			}
+			contenidotab += "\n";
+		}
+		document.querySelector(conf.contenedor).innerHTML = "<pre>"+contenidotab+"</pre>";
+	}*/
+	
+	//Rota una pieza verificando todas las posibles coliciones antes de hacerlo
+	function rotar(){
+		matriztablero = removerPieza(matriztablero, puntosP);
+		piezaRotada = rotarH(piezaActual);
+		var puntosNuevos = obtenerFC( piezaRotada );
+		var errX = 0;
+		var errY = 0;
+		var errXL = 0;
+		var errP = 0;
+		for( i=0; i<4; i++){
+			if( puntosNuevos[i][0] > conf.filas ){
+				var sobrantesY = puntosNuevos[i][0] - conf.filas;
+				if( sobrantesY > errY ) errY = sobrantesY;
+			}
+			if( puntosNuevos[i][1] > conf.columnas ){
+				var sobrantesX = puntosNuevos[i][1] - conf.columnas;
+				if( sobrantesX > errX ) errX = sobrantesX;
+			}
+			if( puntosNuevos[i][1] < 0 ){
+				var sobrantesXL = (puntosNuevos[i][1])*(-1);
+				if( sobrantesXL > errXL ) errXL = sobrantesXL;
+			}
+			if( !errX && !errY && !errXL ){
+				if( colisionPiezas(puntosNuevos) ){
+					errP = 1;
+				}
+			}
+		}
+		if( errX || errY || errXL ){
+			puntosMov[0] += -errY;
+			puntosMov[1] += -errX+errXL;
+			puntosNuevos = obtenerFC( piezaRotada );
+			puntosP = puntosNuevos;
+			piezaActual = piezaRotada;
+			matriztablero = insertarPieza(matriztablero, puntosP);
+		}else{
+			if( errP ){
+				matriztablero = insertarPieza(matriztablero, puntosP);
+			}else{
+				puntosP = puntosNuevos;
+				piezaActual = piezaRotada;
+				matriztablero = insertarPieza(matriztablero, puntosP);
+			}
+		}
+	}
+	
+	//Permite el movimiento horizontal de las piezas en la matriz tablero
+	//Toma en cuenta las posibles coliciones
+	function trasladarX(puntos){
+		matriztablero = removerPieza(matriztablero, puntosP);
+		puntosMov[1] += puntos;
+		var puntosNuevos = obtenerFC( piezaActual );
+		if( !colisionTableroX(puntosNuevos) ) puntosP = puntosNuevos;
+		else puntosMov[1] -= puntos;
+		matriztablero = insertarPieza(matriztablero, puntosP);
+	}
+	
+	//Permite el movimiento verticas de las piezas en la matriz tablero
+	//Toma en cuenta las posibles coliciones
+	function trasladarY(puntos){
+		var colicionSuelo = 0;
+		matriztablero = removerPieza(matriztablero, puntosP);
+		puntosMov[0] += puntos;
+		var puntosNuevos = obtenerFC( piezaActual );
+		if( !colisionTableroY(puntosNuevos) ) puntosP = puntosNuevos;
+		else{
+			puntosMov[0] -= puntos;
+			colicionSuelo = 1;
+		}
+		matriztablero = insertarPieza(matriztablero, puntosP);
+		return colicionSuelo;
+	}
+	
+	//Generera una nueva pieza aleatoria
+	function generarNueva(){
+		piezaActual = piezas[randomNum(7)];
+		puntosMov = [0,3];
+		puntosP = obtenerFC( piezaActual );
+	}
+	
+	function actualizarTablero(){
+		matriztablero = insertarPieza(matriztablero, puntosP);
+	}
+	
+	function colisionPiezas(listaPuntos){
+		if( 0 != matriztablero[listaPuntos[i][0]][listaPuntos[i][1]] )
+			return 1;
+	}
+	
+	function colisionTableroY(listaPuntos){
+		for( i=0; i<4; i++){
+			if( (listaPuntos[i][0] > conf.filas) || colisionPiezas(listaPuntos) )
+				return 1;
+		}
+		return 0;
+	}
+	
+	function colisionTableroX(listaPuntos){
+		for( i=0; i<4; i++){
+			if( (listaPuntos[i][1] > conf.columnas) || (listaPuntos[i][1] < 0) || (colisionPiezas(listaPuntos)) ) return 1;
+		}
+		return 0;
+	}
+	
+	function movCaida(){
+		var bajar = trasladarY(1);
+		if( bajar ){
+			var puntoYMax = 0;
+			var puntoYMin = conf.filas;
+			for( i=0; i<4; i++ ){
+				if( puntosP[i][0] > puntoYMax ) puntoYMax = puntosP[i][0];
+				if( puntosP[i][0] < puntoYMin ) puntoYMin = puntosP[i][0];
+			}
+			if( puntoYMax <= 4 ) detenerJuego();
+			
+			var lineasLlenas = detectarLinea(puntoYMin, puntoYMax);
+			if( lineasLlenas ){
+				eliminarLinea(lineasLlenas);
+				puntuacion.lineasActual++;
+				if( puntuacion.lineasActual >= (puntuacion.nivel*10) ){
+					aumentarNivel();
+				}
+				mostrarDatos();
+			}
+			
+			generarNueva();
+		}
+	}
+	
+	function eliminarLinea(lineasLlenas){
+		var totalLineas = lineasLlenas.length;
+		for( i=totalLineas; i>0; i-- ){
+			matriztablero.splice(lineasLlenas[i-1],1);
+			matriztablero.unshift(generarFila());
+			/*for(j=0; j<totalLineas; j++){
+				lineasLlenas[j] += 1;
+			}*/
+		}
+	}
+	
+	function detectarLinea(rangoi, rangof){
+		var totalLineas = 0;
+		var filasLinea = [];
+		
+		for(i=rangoi; i<=rangof; i++){
+			var celdasLlenas = 0;
+			for(j=0; j<conf.columnas; j++){
+				if( matriztablero[i][j] ) celdasLlenas++;
+			}
+			if( celdasLlenas == conf.columnas ){
+				filasLinea[totalLineas] = i;
+				totalLineas++;
+			}
+		}
+		if( totalLineas ) return filasLinea;
+		return 0;
+	}
+	
+	function iniciarCaida(){
+		intervalo = setInterval(movCaida, tiempo);
+	}
+	
+	function iniciarAnimacion(){
+		intervaloAnimacion = setInterval(imprimirFotoTablero, tiempoAnimacion);
+	}
+	
+	function detenerJuego(){
+		estadoJuego = 0;
+		clearInterval(intervalo);
+		clearInterval(intervaloAnimacion);
+		contexto.font = "bold 26px sans-serif";
+		contexto.fillStyle = 'white';
+		contexto.fillText("Game Over",50,250);
+	}
+	
+	function iniciarJuego(){
+		estadoJuego = 1;
+		piezaActual = piezas[randomNum(7)];
+		puntosMov = [0,3];
+		puntosP = obtenerFC( piezaActual );
+		matriztablero = generarTablero(conf.columnas, conf.filas);
+		actualizarTablero();
+		contexto.drawImage(fondo,0,0,225,500);
+		puntuacion.nivel = 0;
+		puntuacion.lineasActual = 0;
+		tiempo = 1000;
+		aumentarNivel();
+		//iniciarCaida();
+		iniciarAnimacion();
+		mostrarDatos();
+	}
+	
+	function iniciarPartida(){
+		if( 0 == estadoJuego ) iniciarJuego();
+	}
+	
+	function imprimirFotoTablero(){
+		contexto.clearRect(0,0,225,500);
+        contexto.drawImage(fondo,0,0,225,500);
+        for(i=3; i<=conf.filas; i++){
+            for(j=0; j<=conf.columnas; j++){
+                if( matriztablero[i][j] ) {
+                    contexto.drawImage(pieza,j*25,(i-4)*25,25,25);
+                }
+            }
+        }
+    }
+	
+	function aumentarNivel(){
+		puntuacion.nivel++;
+		for(i=1; i<=puntuacion.nivel; i++){
+			tiempo = tiempo*0.8;
+		}
+		clearInterval(intervalo);
+		intervalo = setInterval(movCaida, tiempo);
+	}
+	
+	function mostrarDatos(){
+		document.querySelector("#nivel").value = puntuacion.nivel;
+		document.querySelector("#lineas").value = puntuacion.lineasActual;
+	}
+	
+	//Detecta las pulsaciones del teclado para asignarles funcionamiento
+	function accion(teclado){
+		var teclado = teclado || window.event;
+        var tactual = teclado.keyCode;
+        if( tactual == 37 ) trasladarX(-1);
+        if( tactual == 39 ) trasladarX(1);
+        if( tactual == 40 ) trasladarY(1);
+		if( tactual == 38 ) rotar();
+		if( tactual == 65 ) iniciarPartida();
+        //if( tactual == 32 ) rotar();
+		//if( tactual == 17 ) generarNueva();
+		//if( tactual == 38 ) trasladarY(-1);
+        //if( tactual == 32 ) rotar();
+		actualizarTablero();
+	}
+	
+	document.querySelector("body").addEventListener("keydown", function(e){accion(e)});
+	iniciarJuego();
+};
+	
+var mitetris = new tetris({
+	contenedor: "#tablerotetris",
+	filas: 20,
+	columnas: 9,
+});
+
+</script>
+</body>
+</html>
